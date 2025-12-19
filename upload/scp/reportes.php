@@ -63,6 +63,41 @@ $DEBUG_MODE = isset($_GET['debug']);
                 </a>
             </div>
             
+            <!-- Plantillas Jasper detectadas -->
+            <div class="well well-small" style="margin-top: 15px;">
+                <h5><i class="icon-copy"></i> <?php echo __('Plantillas Jasper'); ?></h5>
+                <div id="templatesList" style="max-height: 220px; overflow-y: auto;">
+                    <?php
+                    // Buscar JRXML en rutas conocidas
+                    $tplDirs = array(
+                        realpath(dirname(__FILE__) . '/../reports/java/templates'),
+                        realpath(dirname(__FILE__) . '/../reports/templates')
+                    );
+                    $templates = array();
+                    foreach ($tplDirs as $d) {
+                        if ($d && is_dir($d)) {
+                            foreach (glob($d . DIRECTORY_SEPARATOR . '*.jrxml') as $jr) {
+                                $base = pathinfo($jr, PATHINFO_FILENAME);
+                                $templates[$base] = true; // evitar duplicados
+                            }
+                        }
+                    }
+                    ksort($templates);
+                    if (!$templates) {
+                        echo '<div class="muted" style="font-size:12px;">' . __('No se encontraron plantillas JRXML') . '</div>';
+                    } else {
+                        foreach (array_keys($templates) as $tpl) {
+                            echo '<button type="button" class="btn btn-xs btn-default jrxml-btn" data-template="' . htmlspecialchars($tpl) . '" style="margin:2px 2px;">'
+                                . '<i class="icon-file"></i> ' . htmlspecialchars($tpl) . '</button>';
+                        }
+                    }
+                    ?>
+                </div>
+                <div class="help-block" style="font-size:11px; color:#666; margin-top:6px;">
+                    <?php echo __('Clic para seleccionar la plantilla (ajusta el tipo del reporte).'); ?>
+                </div>
+            </div>
+            
             <div class="well well-small" style="margin-top: 20px;">
                 <h5><?php echo __('Debug Tools'); ?></h5>
                 <div style="font-size: 12px;">
@@ -74,6 +109,16 @@ $DEBUG_MODE = isset($_GET['debug']);
                     </button>
                     <button onclick="testAjax()" class="btn btn-xs btn-default">
                         <i class="icon-exchange"></i> Test AJAX
+                    </button>
+                    <!-- AGREGAR ESTOS NUEVOS BOTONES -->
+                    <button onclick="testDatabase()" class="btn btn-xs btn-default">
+                        <i class="icon-database"></i> Test DB
+                    </button>
+                    <button onclick="testQuery()" class="btn btn-xs btn-default">
+                        <i class="icon-search"></i> Test Query
+                    </button>
+                    <button onclick="countTickets()" class="btn btn-xs btn-default">
+                        <i class="icon-list"></i> Count Tickets
                     </button>
                     <button onclick="dumpFormData()" class="btn btn-xs btn-default">
                         <i class="icon-list-alt"></i> Dump Form
@@ -92,70 +137,91 @@ $DEBUG_MODE = isset($_GET['debug']);
                     </h4>
                 </div>
                 <div class="card-body">
-                    <form id="reportForm">
-                        <input type="hidden" id="reportType" name="tipo" value="tickets">
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label><?php echo __('Fecha Desde'); ?> *</label>
-                                    <input type="date" id="fechaDesde" class="form-control" 
-                                           value="<?php echo date('Y-m-01'); ?>" required
-                                           onchange="logEvent('fechaDesde cambiada: ' + this.value)">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-group">
-                                    <label><?php echo __('Fecha Hasta'); ?> *</label>
-                                    <input type="date" id="fechaHasta" class="form-control" 
-                                           value="<?php echo date('Y-m-d'); ?>" required
-                                           onchange="logEvent('fechaHasta cambiada: ' + this.value)">
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-4">
-                                <div class="form-group">
-                                    <label><?php echo __('Departamento'); ?></label>
-                                    <select id="departamento" class="form-control" onchange="logEvent('departamento cambiado: ' + this.value)">
-                                        <option value=""><?php echo __('Todos'); ?></option>
-                                        <?php
-                                        $depts = db_query("SELECT dept_id, dept_name FROM ost_department ORDER BY dept_name");
-                                        while($row = db_fetch_array($depts)) {
-                                            echo '<option value="'.$row['dept_id'].'">'.htmlspecialchars($row['dept_name']).'</option>';
-                                        }
-                                        ?>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="col-md-4">
-                                <div class="form-group">
-                                    <label><?php echo __('Estado'); ?></label>
-                                    <select id="estado" class="form-control" onchange="logEvent('estado cambiado: ' + this.value)">
-                                        <option value=""><?php echo __('Todos'); ?></option>
-                                        <?php
-                                        $status = db_query("SELECT id, name FROM ost_ticket_status ORDER BY name");
-                                        while($row = db_fetch_array($status)) {
-                                            echo '<option value="'.$row['id'].'">'.htmlspecialchars($row['name']).'</option>';
-                                        }
-                                        ?>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <div class="col-md-4">
-                                <div class="form-group">
-                                    <label><?php echo __('Formato'); ?> *</label>
-                                    <select id="formato" class="form-control" required onchange="logEvent('formato cambiado: ' + this.value)">
-                                        <option value="pdf">PDF</option>
-                                        <option value="html">HTML</option>
-                                        <option value="csv">CSV</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
+<form id="reportForm" method="post">
+    <input type="hidden" id="reportType" name="tipo" value="tickets">
+    
+    <?php 
+    // Campo CSRF
+    if (isset($thisstaff) && method_exists($thisstaff, 'getCSRFToken')) {
+        $csrf_token = $thisstaff->getCSRFToken();
+    } elseif (function_exists('csrf_token')) {
+        $csrf_token = csrf_token();
+    } else {
+        $csrf_token = $_SESSION['csrf_token'] ?? $_SESSION['__CSRFToken__'] ?? '';
+    }
+    
+    if (!empty($csrf_token)) {
+        echo '<input type="hidden" name="__CSRFToken__" value="' . htmlspecialchars($csrf_token) . '">';
+        echo '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrf_token) . '">';
+    }
+    ?>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label><?php echo __('Fecha Desde'); ?> *</label>
+                <input type="date" id="fechaDesde" name="fecha_desde" class="form-control" 
+                    value="<?php echo date('Y-m-01'); ?>" required
+                       onchange="logEvent('fechaDesde cambiada: ' + this.value)">
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label><?php echo __('Fecha Hasta'); ?> *</label>
+                <input type="date" id="fechaHasta" name="fecha_hasta" class="form-control" 
+                       value="<?php echo date('Y-m-d'); ?>" required
+                       onchange="logEvent('fechaHasta cambiada: ' + this.value)">
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-4">
+            <div class="form-group">
+                <label><?php echo __('Departamento'); ?></label>
+                <select id="departamento" name="departamento" class="form-control" 
+                        onchange="logEvent('departamento cambiado: ' + this.value)">
+                    <option value=""><?php echo __('Todos'); ?></option>
+                    <?php
+                    $depts = db_query("SELECT dept_id, dept_name FROM ost_department ORDER BY dept_name");
+                    while($row = db_fetch_array($depts)) {
+                        echo '<option value="'.$row['dept_id'].'">'.htmlspecialchars($row['dept_name']).'</option>';
+                    }
+                    ?>
+                </select>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="form-group">
+                <label><?php echo __('Estado'); ?></label>
+                <select id="estado" name="estado" class="form-control" 
+                        onchange="logEvent('estado cambiado: ' + this.value)">
+                    <option value=""><?php echo __('Todos'); ?></option>
+                    <?php
+                    $status = db_query("SELECT id, name FROM ost_ticket_status ORDER BY name");
+                    while($row = db_fetch_array($status)) {
+                        echo '<option value="'.$row['id'].'">'.htmlspecialchars($row['name']).'</option>';
+                    }
+                    ?>
+                </select>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="form-group">
+                <label><?php echo __('Formato'); ?> *</label>
+                <select id="formato" name="formato" class="form-control" required 
+                        onchange="logEvent('formato cambiado: ' + this.value)">
+                    <option value="pdf">PDF</option>
+                    <option value="html">HTML</option>
+                    <option value="csv">CSV</option>
+                    <option value="xlsx">Excel (XLSX)</option>
+                    <option value="xls">Excel 97-2003 (XLS)</option>
+                </select>
+            </div>
+        </div>
+    </div>
                         
                         <div class="form-group">
                             <button type="button" class="btn btn-primary btn-lg" onclick="generateReport()" id="btnGenerar">
@@ -282,6 +348,167 @@ function logEvent(eventName) {
     logToConsole(`📝 ${eventName}`, 'debug');
 }
 
+// Funciones de diagnóstico de base de datos
+function testDatabase() {
+    logToConsole('🛢️ Obteniendo estadísticas de base de datos...', 'info');
+    
+    fetch('ajax_reportes.php?test=db_stats')
+        .then(response => response.text())
+        .then(data => {
+            logToConsole('📊 Estadísticas DB:', 'info');
+            const lines = data.split('\n');
+            lines.forEach(line => {
+                if (line.trim()) {
+                    if (line.includes('TOTAL TICKETS:') || line.includes('tickets')) {
+                        logToConsole(line, 'success');
+                    } else if (line.includes('RANGO DE FECHAS:')) {
+                        logToConsole(line, 'info');
+                    } else if (line.includes('ÚLTIMOS') || line.includes('TEST')) {
+                        logToConsole(line, 'debug');
+                    } else {
+                        logToConsole(line, 'info');
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            logToConsole(`❌ Error obteniendo stats DB: ${error.message}`, 'error');
+        });
+}
+
+function testQuery() {
+    logToConsole('🔍 Probando consulta SQL...', 'info');
+    
+    fetch('ajax_reportes.php?test_query')
+        .then(response => response.text())
+        .then(data => {
+            logToConsole('📋 Resultado test query:', 'info');
+            console.log(data);
+            
+            const lines = data.split('\n');
+            lines.forEach(line => {
+                if (line.trim()) {
+                    if (line.includes('Registro') || line.includes('Array')) {
+                        logToConsole(line, 'debug');
+                    } else if (line.includes('✅') || line.includes('encontrados')) {
+                        logToConsole(line, 'success');
+                    } else if (line.includes('❌')) {
+                        logToConsole(line, 'error');
+                    } else {
+                        logToConsole(line, 'info');
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            logToConsole(`❌ Error en test query: ${error.message}`, 'error');
+        });
+}
+
+function testQueryWithDates() {
+    const desde = document.getElementById('fechaDesde').value || '2021-01-01';
+    const hasta = document.getElementById('fechaHasta').value || '2025-12-31';
+    
+    logToConsole(`🔍 Probando consulta con fechas ${desde} a ${hasta}`, 'info');
+    
+    // Crear formulario de prueba
+    const formData = new FormData();
+    formData.append('action', 'test_dates');
+    formData.append('fecha_desde', desde);
+    formData.append('fecha_hasta', hasta);
+    formData.append('__CSRFToken__', getCSRFToken());
+    
+    fetch('ajax_reportes.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            logToConsole(`❌ Error: ${data.error}`, 'error');
+        } else {
+            logToConsole(`✅ Tickets encontrados: ${data.count}`, 'success');
+            if (data.range) {
+                logToConsole(`📅 Rango real en BD: ${data.range.real_min} a ${data.range.real_max}`, 'info');
+            }
+            if (data.sample && data.sample.length > 0) {
+                logToConsole('📝 Ejemplos:', 'info');
+                data.sample.forEach(ticket => {
+                    logToConsole(`  #${ticket.number}: ${ticket.subject} (${ticket.created})`, 'debug');
+                });
+            }
+        }
+    })
+    .catch(error => {
+        logToConsole(`❌ Error en test: ${error.message}`, 'error');
+    });
+}
+
+function countTickets() {
+    const desde = document.getElementById('fechaDesde').value || '2024-01-01';
+    const hasta = document.getElementById('fechaHasta').value || '2025-12-18';
+    
+    logToConsole(`🔢 Contando tickets desde ${desde} hasta ${hasta}...`, 'info');
+    
+    // Crear un endpoint simple para contar
+    const formData = new FormData();
+    formData.append('action', 'count_tickets');
+    formData.append('fecha_desde', desde);
+    formData.append('fecha_hasta', hasta);
+    formData.append('__CSRFToken__', getCSRFToken());
+    
+    fetch('ajax_reportes.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            logToConsole(`❌ Error: ${data.error}`, 'error');
+        } else {
+            logToConsole(`📊 Tickets encontrados: ${data.count}`, 'success');
+            if (data.sample) {
+                logToConsole('📝 Ejemplo de tickets:', 'info');
+                data.sample.forEach(ticket => {
+                    logToConsole(`  #${ticket.number}: ${ticket.subject} (${ticket.created})`, 'debug');
+                });
+            }
+        }
+    })
+    .catch(error => {
+        logToConsole(`❌ Error contando tickets: ${error.message}`, 'error');
+    });
+}
+
+function debugAjaxResponse(responseText) {
+    logToConsole('🔍 ANALIZANDO RESPUESTA:', 'debug');
+    
+    // Verificar si es HTML con errores PHP
+    if (responseText.includes('<b>Deprecated</b>') || 
+        responseText.includes('<b>Warning</b>') || 
+        responseText.includes('<b>Fatal error</b>')) {
+        logToConsole('⚠️ Se detectaron errores PHP en la respuesta', 'warning');
+        
+        // Extraer solo el texto del error
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = responseText;
+        const textOnly = tempDiv.textContent || tempDiv.innerText || '';
+        
+        logToConsole('📄 Texto de error extraído:', 'error');
+        logToConsole(textOnly.substring(0, 1000), 'error');
+    }
+    
+    // Verificar si es JSON válido
+    try {
+        JSON.parse(responseText);
+        logToConsole('✅ Respuesta es JSON válido', 'success');
+    } catch (e) {
+        logToConsole('❌ Respuesta NO es JSON válido', 'error');
+        logToConsole('Primeros 500 caracteres:', 'debug');
+        logToConsole(responseText.substring(0, 500), 'debug');
+    }
+}
+
 function logFormData() {
     const formData = {
         tipo: document.getElementById('reportType').value,
@@ -342,21 +569,39 @@ async function fetchTextOrError(url) {
 }
 
 async function postJsonOrError(url, data) {
+    // Siempre agregar el token CSRF
+    const csrfToken = getCSRFToken();
+    if (csrfToken) {
+        data['__CSRFToken__'] = csrfToken;
+    }
+    
+    logToConsole('📤 Enviando datos:', 'debug');
+    logToConsole(JSON.stringify(data, null, 2), 'debug');
+    
     const res = await fetch(url, {
         method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
         body: new URLSearchParams(data)
     });
+    
     const txt = await res.text();
+    logToConsole(`📥 Respuesta HTTP ${res.status}:`, res.ok ? 'success' : 'error');
+    logToConsole(txt, 'debug');
+    
     let json;
     try {
         json = JSON.parse(txt);
     } catch (e) {
-        throw new Error(txt || 'Respuesta inválida');
+        throw new Error(txt || `Respuesta inválida (no JSON)`);
     }
+    
     if (!res.ok || json.error || json.ok === false) {
         const msg = json.error || txt || `HTTP ${res.status}`;
         throw new Error(msg);
     }
+    
     return json;
 }
 
@@ -488,6 +733,15 @@ function updateProgress(step, percent, message) {
 // =================================================================
 function generateReport() {
     logToConsole('🚀 INICIANDO GENERACIÓN DE REPORTE', 'info');
+    
+    // Obtener y mostrar el token CSRF
+    const csrfToken = getCSRFToken();
+    if (csrfToken) {
+        logToConsole(`🔑 Token CSRF a usar: ${csrfToken.substring(0, 20)}...`, 'success');
+    } else {
+        logToConsole('⚠️ ADVERTENCIA: No se encontró token CSRF', 'warning');
+    }
+    
     logFormData();
 
     // Validar
@@ -505,49 +759,125 @@ function generateReport() {
     document.getElementById('progressPanel').style.display = 'block';
     document.getElementById('btnGenerar').disabled = true;
 
-    const data = {
-        tipo: document.getElementById('reportType').value,
-        fecha_desde: document.getElementById('fechaDesde').value,
-        fecha_hasta: document.getElementById('fechaHasta').value,
-        departamento: document.getElementById('departamento').value,
-        estado: document.getElementById('estado').value,
-        formato: document.getElementById('formato').value
-    };
-
-    logToConsole('📤 Enviando parámetros:', 'debug');
-    logToConsole(JSON.stringify(data), 'debug');
+    // Usar FormData para enviar el formulario completo
+    const formData = new FormData(document.getElementById('reportForm'));
+    
+    // Agregar CSRF si no está en el formulario
+    if (csrfToken && !formData.has('__CSRFToken__')) {
+        formData.append('__CSRFToken__', csrfToken);
+    }
+    
+    // Convertir FormData a objeto para logging
+    const formDataObj = {};
+    for (let [key, value] of formData.entries()) {
+        formDataObj[key] = value;
+    }
+    
+    logToConsole('📤 Enviando FormData:', 'debug');
+    logToConsole(JSON.stringify(formDataObj, null, 2), 'debug');
 
     updateProgress(1, 25, 'Validando datos...');
 
-    postJsonOrError('ajax_reportes.php', data)
-        .then(json => {
-            updateProgress(2, 60, 'Generando XML...');
-            updateProgress(3, 85, 'Ejecutando Java...');
-            logToConsole('✅ JAR ejecutado correctamente', 'success');
-            if (json.download) {
-                updateProgress(4, 100, 'Descargando archivo...');
-                logToConsole('💾 Iniciando descarga', 'info');
-                window.location = json.download;
-                showMessage('Reporte generado. La descarga debería iniciar automáticamente.', 'success');
+    // Enviar usando FormData directamente
+    fetch('ajax_reportes.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(async response => {
+        const text = await response.text();
+        logToConsole(`📥 Respuesta HTTP ${response.status}:`, 'debug');
+        logToConsole(text.substring(0, 500) + (text.length > 500 ? '...' : ''), 'debug');
+        
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (e) {
+            throw { message: `Respuesta no es JSON: ${text.substring(0, 200)}` };
+        }
+        
+        if (!response.ok || json.error) {
+            throw { message: json.error || `Error ${response.status}` , debug: json.debug || null };
+        }
+        
+        return json;
+    })
+    .then(json => {
+        updateProgress(2, 60, 'Generando XML...');
+        updateProgress(3, 85, 'Ejecutando Java...');
+        logToConsole('✅ JAR ejecutado correctamente', 'success');
+        
+        if (json.download) {
+            const isHtml = (json.file || '').toLowerCase().endsWith('.html');
+            updateProgress(4, 100, isHtml ? 'Abriendo en nueva pestaña...' : 'Descargando archivo...');
+            logToConsole(isHtml ? `🧭 Abriendo reporte en nueva pestaña: ${json.download}` : `💾 Iniciando descarga: ${json.download}`, 'info');
+
+            if (isHtml) {
+                const win = window.open(json.download, '_blank');
+                if (!win) {
+                    const link = document.createElement('a');
+                    link.href = json.download;
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+                showMessage(`Reporte \"${json.file}\" generado. Abierto en una nueva pestaña.`, 'success');
             } else {
-                showMessage('Reporte generado pero no se recibió URL de descarga.', 'warning');
+                // Forzar descarga (PDF, CSV) obteniendo blob y usando object URL
+                fetch(json.download)
+                    .then(res => res.blob())
+                    .then(blob => {
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = json.file || 'reporte';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        window.URL.revokeObjectURL(url);
+                        showMessage(`Reporte \"${json.file}\" generado. Descarga iniciada.`, 'success');
+                    })
+                    .catch(err => {
+                        logToConsole('⚠️ Error descargando blob: ' + (err && err.message ? err.message : err), 'warning');
+                        // Fallback: navegar al endpoint
+                        const link = document.createElement('a');
+                        link.href = json.download;
+                        link.target = '_blank';
+                        link.rel = 'noopener';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    });
             }
-        })
-        .catch(error => {
-            logToConsole(`❌ Error generando reporte: ${error.message}`, 'error');
-            showMessage('Error generando reporte: ' + error.message, 'danger');
-            updateProgress(4, 100, 'Error');
-        })
-        .finally(() => {
-            document.getElementById('btnGenerar').disabled = false;
-            setTimeout(() => {
-                document.getElementById('progressPanel').style.display = 'none';
-                updateProgress(1, 0, 'Validando datos...');
-                updateProgress(2, 0, 'Generando XML...');
-                updateProgress(3, 0, 'Ejecutando Java...');
-                updateProgress(4, 0, 'Descargando archivo...');
-            }, 1200);
-        });
+        } else {
+            showMessage('Reporte generado pero no se recibió URL de descarga.', 'warning');
+        }
+    })
+    .catch(error => {
+        const debugData = error && error.debug ? error.debug : null;
+        logToConsole(`❌ Error generando reporte: ${error.message || error}`, 'error');
+        showMessage('Error generando reporte: ' + (error.message || error), 'danger');
+        if (debugData) {
+            try {
+                logToConsole('🔎 Debug:', 'debug');
+                logToConsole(JSON.stringify(debugData, null, 2), 'debug');
+            } catch (e) {
+                logToConsole('🔎 Debug (string): ' + debugData, 'debug');
+            }
+        }
+        updateProgress(4, 100, 'Error');
+    })
+    .finally(() => {
+        document.getElementById('btnGenerar').disabled = false;
+        setTimeout(() => {
+            document.getElementById('progressPanel').style.display = 'none';
+            updateProgress(1, 0, 'Validando datos...');
+            updateProgress(2, 0, 'Generando XML...');
+            updateProgress(3, 0, 'Ejecutando Java...');
+            updateProgress(4, 0, 'Descargando archivo...');
+        }, 1200);
+    });
 }
 
 function resetForm() {
@@ -570,6 +900,52 @@ function showMessage(text, type) {
     logToConsole(`💬 Mensaje: ${text}`, type === 'danger' ? 'error' : 'info');
 }
 
+function getCSRFToken() {
+    // Primero buscar en inputs hidden
+    const inputToken = document.querySelector('input[name="__CSRFToken__"]');
+    if (inputToken && inputToken.value) {
+        logToConsole('🔑 Token CSRF encontrado en input __CSRFToken__', 'debug');
+        return inputToken.value;
+    }
+    
+    const inputToken2 = document.querySelector('input[name="csrf_token"]');
+    if (inputToken2 && inputToken2.value) {
+        logToConsole('🔑 Token CSRF encontrado en input csrf_token', 'debug');
+        return inputToken2.value;
+    }
+    
+    // Buscar en meta tags
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    if (metaToken) {
+        logToConsole('🔑 Token CSRF encontrado en meta tag', 'debug');
+        return metaToken.getAttribute('content');
+    }
+    
+    // Buscar en data attributes del body
+    const bodyToken = document.body.dataset.csrfToken;
+    if (bodyToken) {
+        logToConsole('🔑 Token CSRF encontrado en body data attribute', 'debug');
+        return bodyToken;
+    }
+    
+    // Intentar obtener del objeto ost si existe
+    if (window.ost && window.ost.csrf_token) {
+        logToConsole('🔑 Token CSRF obtenido de window.ost', 'debug');
+        return window.ost.csrf_token;
+    }
+    
+    // Último intento: buscar cualquier input con "csrf" o "token"
+    const csrfInputs = document.querySelectorAll('input');
+    for (let input of csrfInputs) {
+        if (input.name && input.name.toLowerCase().includes('csrf') && input.value) {
+            logToConsole(`🔑 Token CSRF encontrado en input[name="${input.name}"]`, 'debug');
+            return input.value;
+        }
+    }
+    
+    logToConsole('⚠️ Token CSRF no encontrado. La solicitud puede fallar.', 'warning');
+    return '';
+}
 // =================================================================
 // INICIALIZACIÓN
 // =================================================================
@@ -604,6 +980,18 @@ $(document).ready(function() {
         };
         
         $('#reportTitle').html(`<i class="icon-${icons[type]}"></i> ${titles[type] || 'Reporte'}`);
+    });
+
+    // Botones de plantillas JRXML -> ajustan el tipo al nombre de plantilla
+    $(document).on('click', '.jrxml-btn', function(e) {
+        e.preventDefault();
+        const tpl = $(this).data('template');
+        if (!tpl) return;
+        $('#reportType').val(tpl);
+        $('.jrxml-btn').removeClass('btn-primary').addClass('btn-default');
+        $(this).removeClass('btn-default').addClass('btn-primary');
+        logToConsole(`🧩 Plantilla seleccionada: ${tpl}`, 'info');
+        $('#reportTitle').html(`<i class="icon-file"></i> ${tpl}`);
     });
     
     // Verificar sistema al cargar

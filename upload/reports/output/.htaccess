@@ -1,0 +1,10 @@
+<IfModule mod_mime.c>
+  AddType application/pdf .pdf
+  AddType text/html .html
+  AddType text/csv .csv
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(pdf)$">
+    Header set Content-Type application/pdf
+  </FilesMatch>
+</IfModule>
