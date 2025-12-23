@@ -13,6 +13,132 @@ if(!$thisstaff || !$thisstaff->isAdmin()) {
 $nav->setActiveTab('reportes');
 include(STAFFINC_DIR.'header.inc.php');
 
+?>
+<div class="container-fluid">
+    <h2><i class="icon-bar-chart"></i> <?php echo __('Generador de Reportes Jasper'); ?></h2>
+
+    <div class="well well-small">
+        <h5><i class="icon-clipboard"></i> <?php echo __('Requisitos del Sistema'); ?></h5>
+        <?php
+        $jsJar = realpath(dirname(__FILE__) . '/../jasper-test/jasperstarter/bin/jasperstarter.jar');
+        $jdbcFile = realpath(dirname(__FILE__) . '/../jasper-test/mysql-connector-java.jar');
+        $ok = function($p){ return ($p && file_exists($p)); };
+        ?>
+        <ul class="unstyled" style="margin:0;">
+            <li>
+                <span class="label <?php echo $ok($jsJar)?'label-success':'label-important'; ?>" style="display:inline-block;min-width:70px;"><?php echo $ok($jsJar)?'OK':'FALTANTE'; ?></span>
+                JasperStarter: <code><?php echo $jsJar ? str_replace(dirname(__FILE__).'/..','',$jsJar) : 'upload/jasper-test/jasperstarter/bin/jasperstarter.jar'; ?></code>
+            </li>
+            <li>
+                <span class="label <?php echo $ok($jdbcFile)?'label-success':'label-important'; ?>" style="display:inline-block;min-width:70px;"><?php echo $ok($jdbcFile)?'OK':'FALTANTE'; ?></span>
+                MySQL Connector: <code><?php echo $jdbcFile ? str_replace(dirname(__FILE__).'/..','',$jdbcFile) : 'upload/jasper-test/mysql-connector-java.jar'; ?></code>
+            </li>
+        </ul>
+    </div>
+
+        <div class="well">
+                <form id="simpleReportForm" class="form-horizontal" onsubmit="return false;">
+                        <div class="row">
+                                <div class="col-md-4">
+                                        <label><?php echo __('Fecha Desde'); ?></label>
+                                        <input type="date" id="srFechaDesde" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
+                                </div>
+                                <div class="col-md-4">
+                                        <label><?php echo __('Fecha Hasta'); ?></label>
+                                        <input type="date" id="srFechaHasta" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                </div>
+                                <div class="col-md-4">
+                                        <label><?php echo __('Formato'); ?></label>
+                                        <select id="srFormato" class="form-control">
+                                                <option value="pdf">PDF</option>
+                                                <option value="xlsx">Excel (XLSX)</option>
+                                                <option value="html">HTML</option>
+                                                <option value="docx">Word (DOCX)</option>
+                                                <option value="csv">CSV</option>
+                                        </select>
+                                </div>
+                        </div>
+                </form>
+        </div>
+
+        <div class="well well-small">
+            <h5><i class="icon-eye-open"></i> <?php echo __('Vista previa'); ?></h5>
+            <iframe id="previewFrame" style="width:100%; height:600px; border:1px solid #ddd; background:#fff;" loading="lazy"></iframe>
+            <div style="margin-top:8px;">
+                <button class="btn btn-mini" onclick="openPreviewTab()"><i class="icon-external-link"></i> <?php echo __('Abrir en nueva pestaña'); ?></button>
+                <button class="btn btn-mini" onclick="showExplorer()"><i class="icon-list"></i> <?php echo __('Explorar / Parámetros (jasper-test)'); ?></button>
+            </div>
+        </div>
+
+        <div class="well well-small">
+                <h5><i class="icon-copy"></i> <?php echo __('Plantillas Jasper'); ?></h5>
+                <div id="templatesGrid" class="row">
+                    <?php
+                    $tplDirs = array(
+                        realpath(dirname(__FILE__) . '/../reports/java/templates'),
+                        realpath(dirname(__FILE__) . '/../reports/templates')
+                    );
+                    $templates = array(); // nombre => ruta
+                    foreach ($tplDirs as $d) {
+                        if ($d && is_dir($d)) {
+                            foreach (glob($d . DIRECTORY_SEPARATOR . '*.jrxml') as $jr) {
+                                $base = pathinfo($jr, PATHINFO_FILENAME);
+                                $templates[$base] = $jr; // guardar ruta completa
+                            }
+                        }
+                    }
+                    ksort($templates);
+                    if (!$templates) {
+                        echo '<div class="muted" style="font-size:12px;">' . __('No se encontraron plantillas JRXML') . '</div>';
+                    } else {
+                        foreach ($templates as $tpl => $path) {
+                            $safeTpl = htmlspecialchars($tpl);
+                            $safePath = htmlspecialchars($path);
+                            echo '<div class="col-md-4" style="margin-bottom:12px;">';
+                            echo '  <div class="well" style="padding:10px;">';
+                            echo '    <strong><i class="icon-file"></i> ' . $safeTpl . '</strong>';
+                            echo '    <div class="btn-group" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">';
+                            echo '      <button class="btn btn-mini btn-danger" onclick="generateReportPath(\'' . $safePath . '\', \"pdf\")"><i class="icon-file"></i> PDF</button>';
+                            echo '      <button class="btn btn-mini btn-success" onclick="generateReportPath(\'' . $safePath . '\', \"xlsx\")"><i class="icon-file"></i> XLSX</button>';
+                            echo '      <button class="btn btn-mini btn-primary" onclick="generateReportPath(\'' . $safePath . '\', \"docx\")"><i class="icon-file"></i> DOCX</button>';
+                            echo '      <button class="btn btn-mini btn-info" onclick="generateReportPath(\'' . $safePath . '\', \"html\")"><i class="icon-file"></i> HTML</button>';
+                            echo '      <button class="btn btn-mini" onclick="generateReportPath(\'' . $safePath . '\', \"csv\")"><i class="icon-file"></i> CSV</button>';
+                            echo '    </div>';
+                            echo '  </div>';
+                            echo '</div>';
+                        }
+                    }
+                    ?>
+                </div>
+        </div>
+</div>
+
+<script type="text/javascript">
+function getDates() {
+    return {
+        desde: document.getElementById('srFechaDesde').value,
+        hasta: document.getElementById('srFechaHasta').value
+    };
+}
+function generateReportPath(jrxmlPath, fmt) {
+    const dates = getDates();
+    const format = fmt || document.getElementById('srFormato').value;
+    const url = '../jasper-test/generate.php?accion=generar'
+        + '&reporte=' + encodeURIComponent(jrxmlPath)
+        + '&formato=' + encodeURIComponent(format)
+        + '&fecha_desde=' + encodeURIComponent(dates.desde + ' 00:00:00')
+        + '&fecha_hasta=' + encodeURIComponent(dates.hasta + ' 23:59:59');
+    const frame = document.getElementById('previewFrame');
+    frame.src = url;
+    window._lastPreviewUrl = url;
+}
+function openPreviewTab(){ if (window._lastPreviewUrl) { window.open(window._lastPreviewUrl, '_blank'); } }
+function showExplorer(){ const frame = document.getElementById('previewFrame'); frame.src = '../jasper-test/generate.php?accion=listar'; window._lastPreviewUrl = frame.src; }
+</script>
+
+<?php
+include(STAFFINC_DIR.'footer.inc.php');
+return;
 // Configuración para JavaScript
 $JAR_PATH = dirname(__FILE__) . '/../reports/java/osticket-reporter.jar';
 $JAR_EXISTS = file_exists($JAR_PATH);
@@ -221,8 +347,45 @@ $DEBUG_MODE = isset($_GET['debug']);
                 </select>
             </div>
         </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label>Motor de generación *</label>
+                <select id="engine" name="engine" class="form-control" required
+                        onchange="logEvent('engine cambiado: ' + this.value)">
+                    <option value="java" selected>Jasper (Java/JAR)</option>
+                    <option value="phpjasper">PHPJasperXML + TCPDF (fiel al JRXML)</option>
+                    <option value="php">PHP (SQL en servidor, HTML+PDF)</option>
+                    <option value="jrs">JasperReports Server (REST)</option>
+                </select>
+                <div class="help-block" style="font-size:11px; color:#666; margin-top:6px;">
+                    Elija el motor: Java usa el JAR; PHPJasperXML sigue el layout JRXML; PHP ejecuta la SQL y arma HTML/PDF; JRS usa el servidor Jasper.
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label><?php echo __('Fuente de datos'); ?> *</label>
+                <select id="datasource" name="datasource" class="form-control" required
+                        onchange="logEvent('datasource cambiado: ' + this.value)">
+                    <option value="sql" selected>SQL (JDBC)</option>
+                    <option value="xml">XML (por defecto)</option>
+                </select>
+                <div class="help-block" style="font-size:11px; color:#666; margin-top:6px;">
+                    SQL ejecuta la consulta del JRXML directamente (requiere driver). XML usa los datos generados por PHP.
+                </div>
+            </div>
+        </div>
     </div>
                         
+    <!-- Parámetros dinámicos de la plantilla seleccionada -->
+    <div id="dynamicParams" class="well well-small" style="margin-top: 10px; display: none;">
+        <h5 style="margin-top:0"><i class="icon-cog"></i> Parámetros del Reporte</h5>
+        <div id="dynamicParamsFields" class="row"></div>
+        <div class="help-block" style="font-size:11px; color:#666; margin-top:6px;">
+            Los valores aquí ingresados se pasarán al reporte como parámetros Jasper.
+        </div>
+    </div>
+
                         <div class="form-group">
                             <button type="button" class="btn btn-primary btn-lg" onclick="generateReport()" id="btnGenerar">
                                 <i class="icon-download"></i> <?php echo __('Generar Reporte'); ?>
@@ -271,6 +434,11 @@ $DEBUG_MODE = isset($_GET['debug']);
                             <td><strong>JAR:</strong></td>
                             <td id="sysJAR"><?php echo $JAR_EXISTS ? '✅ Existe' : '❌ No encontrado'; ?></td>
                             <td><button onclick="testJAR()" class="btn btn-xs btn-default">Test</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Driver JDBC:</strong></td>
+                            <td id="sysDriver">❌ No verificado</td>
+                            <td><button onclick="testDriver()" class="btn btn-xs btn-default">Test</button></td>
                         </tr>
                         <tr>
                             <td><strong>AJAX:</strong></td>
@@ -516,7 +684,9 @@ function logFormData() {
         fecha_hasta: document.getElementById('fechaHasta').value,
         departamento: document.getElementById('departamento').value,
         estado: document.getElementById('estado').value,
-        formato: document.getElementById('formato').value
+        formato: document.getElementById('formato').value,
+        engine: document.getElementById('engine').value,
+        datasource: document.getElementById('datasource').value
     };
     
     logToConsole('📋 Datos del formulario:', 'debug');
@@ -637,6 +807,29 @@ function testJAR() {
         });
 }
 
+function testDriver() {
+    logToConsole('🔌 Probando driver JDBC...', 'info');
+    updateSystemStatus('Driver', '⌛ Verificando...', 'warning');
+    fetch('ajax_reportes.php?test=check_driver')
+        .then(r => r.json())
+        .then(d => {
+            if (d && d.jdbc_driver_present) {
+                const name = d.jdbc_driver || 'driver detectado';
+                logToConsole(`✅ Driver JDBC detectado: ${name}`, 'success');
+                updateSystemStatus('Driver', `✅ ${name}`, 'success');
+            } else {
+                const hint = (d && d.hint) ? d.hint : 'Copia mysql-connector-j-<versión>.jar en upload/reports/java/lib/';
+                logToConsole('⚠️ Driver JDBC no detectado. ' + hint, 'warning');
+                updateSystemStatus('Driver', '⚠️ No detectado', 'warning');
+                showMessage('⚠️ Falta el driver MySQL JDBC. ' + hint, 'warning');
+            }
+        })
+        .catch(err => {
+            logToConsole('⚠️ No se pudo verificar el driver JDBC: ' + err.message, 'warning');
+            updateSystemStatus('Driver', '⚠️ Error', 'warning');
+        });
+}
+
 function testAjax() {
     logToConsole('🔗 Probando conexión AJAX...', 'info');
     updateSystemStatus('AJAX', '⌛ Probando...', 'warning');
@@ -694,7 +887,8 @@ function showFormData() {
           `Fecha Hasta: ${formData.fecha_hasta}\n` +
           `Departamento: ${formData.departamento}\n` +
           `Estado: ${formData.estado}\n` +
-          `Formato: ${formData.formato}`);
+          `Formato: ${formData.formato}\n` +
+          `Engine: ${formData.engine}`);
 }
 
 function dumpFormData() {
@@ -707,7 +901,9 @@ function dumpFormData() {
         'Fecha Hasta': document.getElementById('fechaHasta').value,
         'Departamento': document.getElementById('departamento').value,
         'Estado': document.getElementById('estado').value,
-        'Formato': document.getElementById('formato').value
+        'Formato': document.getElementById('formato').value,
+        'Engine': document.getElementById('engine').value,
+        'Datasource': document.getElementById('datasource').value
     });
 }
 
@@ -759,6 +955,8 @@ function generateReport() {
     document.getElementById('progressPanel').style.display = 'block';
     document.getElementById('btnGenerar').disabled = true;
 
+    const engine = (document.getElementById('engine') || {}).value || 'java';
+
     // Usar FormData para enviar el formulario completo
     const formData = new FormData(document.getElementById('reportForm'));
     
@@ -802,9 +1000,52 @@ function generateReport() {
         return json;
     })
     .then(json => {
-        updateProgress(2, 60, 'Generando XML...');
-        updateProgress(3, 85, 'Ejecutando Java...');
-        logToConsole('✅ JAR ejecutado correctamente', 'success');
+        // Aviso visible si falta el driver JDBC en modo SQL
+        if (json.debug && json.debug.jdbc_driver_present === false) {
+            const hint = (json.debug.hints && json.debug.hints[0]) ? json.debug.hints[0] : 'Copia mysql-connector-j-<versión>.jar en upload/reports/java/lib/';
+            showMessage('⚠️ Falta el driver MySQL JDBC. ' + hint, 'warning');
+            logToConsole('⚠️ JDBC driver no detectado en lib/ (modo SQL). ' + hint, 'warning');
+        }
+        const datasource = json.debug && json.debug.datasource ? json.debug.datasource : null;
+        const driverName = json.debug && json.debug.jdbc_driver ? json.debug.jdbc_driver : null;
+                const esc = s => (s || '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        let jdbcNote = '';
+        if (datasource === 'sql') {
+            jdbcNote = ' | JDBC activo' + (driverName ? ' (' + driverName + ')' : '');
+            logToConsole(`✅ Ejecutado en modo JDBC (SQL del JRXML)${driverName ? ' usando ' + driverName : ''}`, 'success');
+            if (json.debug && json.debug.java_cmd) {
+                logToConsole('🔧 Java cmd: ' + json.debug.java_cmd, 'debug');
+            }
+        }
+                // Mostrar consultas del JRXML
+                const rawQuery = json.debug && json.debug.jrxml_query_raw ? json.debug.jrxml_query_raw : '';
+                const resolvedQuery = json.debug && json.debug.jrxml_query_resolved ? json.debug.jrxml_query_resolved : '';
+                if (rawQuery) { logToConsole('🧩 JRXML query (raw):\n' + rawQuery, 'debug'); }
+                if (resolvedQuery) { logToConsole('🧩 JRXML query (resolved):\n' + resolvedQuery, 'debug'); }
+                // Mostrar probe de campos/primer fila
+                const probeFields = json.debug && json.debug.jrxml_probe_fields ? json.debug.jrxml_probe_fields : null;
+                const probeFirst = json.debug && json.debug.jrxml_probe_first ? json.debug.jrxml_probe_first : null;
+                if (probeFields && probeFirst) {
+                        logToConsole('🧪 Campos detectados: ' + probeFields.join(', '), 'info');
+                        try { logToConsole('🧪 Primera fila (probe):\n' + JSON.stringify(probeFirst, null, 2), 'debug'); } catch (e) {}
+                }
+                if (json.debug && json.debug.jrxml_probe_error) {
+                        logToConsole('⚠️ Error probe JRXML SQL: ' + json.debug.jrxml_probe_error, 'warning');
+                }
+                const queryHtml = (rawQuery || resolvedQuery)
+                        ? (`<div style="margin-top:8px">
+                                    <details open><summary>Consulta JRXML</summary>
+                                        <pre style="white-space:pre-wrap">${esc(rawQuery)}</pre>
+                                    </details>
+                                    <details><summary>Consulta Ejecutada</summary>
+                                        <pre style="white-space:pre-wrap">${esc(resolvedQuery)}</pre>
+                                    </details>
+                                    ${probeFields && probeFirst ? (`<details><summary>Campos / Primera fila</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(probeFirst, null, 2))}</pre></details>`) : ''}
+                             </div>`)
+                        : '';
+        updateProgress(2, 60, 'Preparando datos...');
+        updateProgress(3, 85, 'Ejecutando motor: ' + engine + '...');
+        logToConsole('✅ Motor ejecutado correctamente', 'success');
         
         if (json.download) {
             const isHtml = (json.file || '').toLowerCase().endsWith('.html');
@@ -822,7 +1063,7 @@ function generateReport() {
                     link.click();
                     document.body.removeChild(link);
                 }
-                showMessage(`Reporte \"${json.file}\" generado. Abierto en una nueva pestaña.`, 'success');
+                showMessage(`Reporte "${json.file}" generado${jdbcNote}. Abierto en una nueva pestaña.${queryHtml}`, 'success');
             } else {
                 // Forzar descarga (PDF, CSV) obteniendo blob y usando object URL
                 fetch(json.download)
@@ -836,7 +1077,7 @@ function generateReport() {
                         link.click();
                         document.body.removeChild(link);
                         window.URL.revokeObjectURL(url);
-                        showMessage(`Reporte \"${json.file}\" generado. Descarga iniciada.`, 'success');
+                        showMessage(`Reporte "${json.file}" generado${jdbcNote}. Descarga iniciada.${queryHtml}`, 'success');
                     })
                     .catch(err => {
                         logToConsole('⚠️ Error descargando blob: ' + (err && err.message ? err.message : err), 'warning');
@@ -992,15 +1233,41 @@ $(document).ready(function() {
         $(this).removeClass('btn-default').addClass('btn-primary');
         logToConsole(`🧩 Plantilla seleccionada: ${tpl}`, 'info');
         $('#reportTitle').html(`<i class="icon-file"></i> ${tpl}`);
+
+        // Cargar parámetros dinámicos de la plantilla
+        loadJrxmlParams(tpl);
     });
     
     // Verificar sistema al cargar
     setTimeout(() => {
         testJava();
         testJAR();
+        testDriver();
         testAjax();
         checkSession();
     }, 1000);
+
+    // Pre-chequeo del driver JDBC cuando se selecciona SQL
+    $('#datasource').on('change', function() {
+        const val = $(this).val();
+        if (val === 'sql') {
+            logToConsole('🔎 Verificando driver JDBC en lib/ ...', 'info');
+            fetch('ajax_reportes.php?test=check_driver')
+                .then(r => r.json())
+                .then(d => {
+                    if (d && d.jdbc_driver_present === false) {
+                        const hint = d.hint || 'Copia mysql-connector-j-<versión>.jar en upload/reports/java/lib/';
+                        showMessage('⚠️ Falta el driver MySQL JDBC. ' + hint, 'warning');
+                        logToConsole('⚠️ JDBC driver no detectado en lib/. ' + hint, 'warning');
+                    } else if (d && d.jdbc_driver) {
+                        logToConsole(`✅ Driver JDBC detectado: ${d.jdbc_driver}`, 'success');
+                    }
+                })
+                .catch(err => {
+                    logToConsole('⚠️ No se pudo verificar el driver JDBC: ' + err.message, 'warning');
+                });
+        }
+    });
     
     // Atajo de teclado para debug (Ctrl+Shift+D)
     document.addEventListener('keydown', function(e) {
@@ -1019,6 +1286,96 @@ $(document).ready(function() {
     logToConsole('  Ctrl+Shift+L - Limpiar consola', 'debug');
     logToConsole('✅ Sistema de debug inicializado', 'success');
 });
+
+// Cargar parámetros desde el JRXML y renderizar inputs dinámicos
+async function loadJrxmlParams(tplName) {
+    try {
+        logToConsole(`🔄 Cargando parámetros de JRXML para: ${tplName}`, 'info');
+        const formData = new FormData();
+        formData.append('action', 'jrxml_params');
+        formData.append('template', tplName);
+        const csrfToken = getCSRFToken();
+        if (csrfToken) formData.append('__CSRFToken__', csrfToken);
+
+        const res = await fetch('ajax_reportes.php', { method: 'POST', body: formData });
+        const txt = await res.text();
+        logToConsole(`Parámetros JRXML (HTTP ${res.status}): ${txt.substring(0, 400)}`, 'debug');
+        if (!res.ok) throw new Error(txt || `HTTP ${res.status}`);
+        const data = JSON.parse(txt);
+        if (!data || !data.ok) throw new Error((data && data.error) || 'Respuesta inválida');
+
+        const list = Array.isArray(data.params) ? data.params : [];
+        const container = document.getElementById('dynamicParams');
+        const fields = document.getElementById('dynamicParamsFields');
+        fields.innerHTML = '';
+        if (!list.length) {
+            container.style.display = 'none';
+            logToConsole('Sin parámetros para solicitar.', 'info');
+            return;
+        }
+
+        // Renderizar
+        list.forEach(p => {
+            // Solo parámetros de prompting
+            if (p && p.prompt === false) return;
+            const safeName = p.name || '';
+            if (!safeName) return;
+            if (['logo','REPORT_TITLE','GENERATED_DATE','COMPANY_NAME'].includes(safeName)) return;
+
+            const col = document.createElement('div');
+            col.className = 'col-md-4';
+            const group = document.createElement('div');
+            group.className = 'form-group';
+            const label = document.createElement('label');
+            label.textContent = `${safeName}`;
+
+            let input;
+            const type = (p.type || 'string').toLowerCase();
+            if (type === 'date') {
+                input = document.createElement('input');
+                input.type = 'date';
+            } else if (type === 'boolean') {
+                input = document.createElement('select');
+                const opt1 = document.createElement('option'); opt1.value = 'true'; opt1.textContent = 'Sí';
+                const opt2 = document.createElement('option'); opt2.value = 'false'; opt2.textContent = 'No';
+                input.appendChild(opt1); input.appendChild(opt2);
+            } else if (type === 'integer' || type === 'number') {
+                input = document.createElement('input');
+                input.type = 'number';
+                if (type === 'integer') input.step = '1';
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+            }
+            input.className = 'form-control';
+            input.name = `param[${safeName}]`;
+            if (p.default !== undefined && p.default !== null) {
+                input.value = String(p.default);
+            }
+            if (p.description) input.placeholder = p.description;
+
+            // Guardar el tipo lógico en un hidden para el servidor
+            const hiddenType = document.createElement('input');
+            hiddenType.type = 'hidden';
+            hiddenType.name = `param_type[${safeName}]`;
+            hiddenType.value = type;
+
+            group.appendChild(label);
+            group.appendChild(input);
+            group.appendChild(hiddenType);
+            col.appendChild(group);
+            fields.appendChild(col);
+        });
+
+        document.getElementById('dynamicParams').style.display = fields.children.length ? 'block' : 'none';
+    } catch (err) {
+        logToConsole(`Error cargando parámetros JRXML: ${err.message}`, 'error');
+        const container = document.getElementById('dynamicParams');
+        const fields = document.getElementById('dynamicParamsFields');
+        container.style.display = 'none';
+        fields.innerHTML = '';
+    }
+}
 </script>
 
 <?php

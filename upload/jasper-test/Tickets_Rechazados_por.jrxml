@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created with Jaspersoft Studio version 6.20.5.final using JasperReports Library version 6.20.5-3efcf2e67f959db3888d79f73dde2dbd7acb4f8e  -->
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="Tickets_Rechazados_por" pageWidth="1024" pageHeight="595" orientation="Landscape" columnWidth="984" leftMargin="20" rightMargin="20" topMargin="25" bottomMargin="35" uuid="1323d180-d040-4448-a94e-87b90e84c2e9">
+	<property name="com.jaspersoft.studio.data.defaultdataadapter" value="DataAdapter3.jrdax"/>
+	<parameter name="logo" class="java.lang.String">
+		<defaultValueExpression><![CDATA["../../assets/default/images/logo.png"]]></defaultValueExpression>
+	</parameter>
+	<queryString>
+		<![CDATA[SELECT
+      t.ticket_id   AS id,
+      t.number      AS numero,
+      DATE_FORMAT(t.created,'%Y-%m-%d %H:%i') AS fecha_creacion,
+      st.name       AS estado,
+      CONCAT(IFNULL(sf.firstname,''),' ',IFNULL(sf.lastname,'')) AS rechazado_por,
+      tm.name       AS equipo,
+      CONCAT(uc.name,' <',uc.email,'>') AS cliente
+    FROM ost_ticket t
+    LEFT JOIN ost_ticket_status st ON st.id = t.status_id
+    LEFT JOIN ost_staff sf ON sf.staff_id = t.staff_id
+    LEFT JOIN ost_team tm ON tm.team_id = t.team_id
+    LEFT JOIN ost_user u ON u.id = t.user_id
+    LEFT JOIN ost_user__cdata uc ON uc.user_id = u.id
+    WHERE st.name IN ('Rejected','Rechazado')
+    ORDER BY t.created DESC]]>
+	</queryString>
+	<field name="id" class="java.lang.String"/>
+	<field name="numero" class="java.lang.String"/>
+	<field name="fecha_creacion" class="java.lang.String"/>
+	<field name="estado" class="java.lang.String"/>
+	<field name="rechazado_por" class="java.lang.String"/>
+	<field name="equipo" class="java.lang.String"/>
+	<field name="cliente" class="java.lang.String"/>
+	<title>
+		<band height="120">
+			<image onErrorType="Blank">
+				<reportElement x="0" y="0" width="200" height="60" uuid="5ee7f8e2-bb2d-47d7-b407-fb20e0e233d9"/>
+				<imageExpression><![CDATA[$P{logo}]]></imageExpression>
+			</image>
+			<textField>
+				<reportElement x="0" y="70" width="984" height="40" uuid="0816f2ec-6573-4861-b34f-dbd49b446bad"/>
+				<textElement textAlignment="Center" verticalAlignment="Middle">
+					<font size="18" isBold="true"/>
+				</textElement>
+				<textFieldExpression><![CDATA["Tickets Rechazados"]]></textFieldExpression>
+			</textField>
+		</band>
+	</title>
+	<detail>
+		<band height="24">
+			<textField>
+				<reportElement x="0" y="0" width="80" height="24" uuid="f4f44198-dca1-4fec-bbbb-71f073f6676a"/>
+				<textFieldExpression><![CDATA[$F{id}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="80" y="0" width="120" height="24" uuid="a1008dae-c729-49cb-8319-34459312d2e7"/>
+				<textFieldExpression><![CDATA[$F{numero}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="450" y="0" width="200" height="24" uuid="1cc302cd-3b4b-497f-9ae8-4d40049cecec"/>
+				<textFieldExpression><![CDATA[$F{rechazado_por}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="650" y="0" width="150" height="24" uuid="32ea79fc-d2c6-4bce-8aac-bfc75ac45f04"/>
+				<textFieldExpression><![CDATA[$F{estado}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement x="800" y="0" width="184" height="24" uuid="8616d619-61aa-45e3-82bf-9724ebb74338"/>
+				<textFieldExpression><![CDATA[$F{cliente}]]></textFieldExpression>
+			</textField>
+		</band>
+	</detail>
+</jasperReport>

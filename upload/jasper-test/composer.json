@@ -1,0 +1,13 @@
+{
+    "name": "osticket/jasper-test",
+    "description": "Prueba de phpjasperxml con osTicket",
+    "require": {
+        "geekcom/phpjasper": "^3.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "JasperTest\\": "src/",
+            "PHPJasper\\": "phpjasper-3.4.0/src/"
+        }
+    }
+}
