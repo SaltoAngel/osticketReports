@@ -2,162 +2,18 @@
 // report_generator.php - GENERADOR UNIVERSAL DE REPORTES
 // Detecta automáticamente todos los reportes JRXML disponibles
 
-// ========== CONFIGURACIÓN ==========
-$java8Path = 'C:\Program Files\Eclipse Adoptium\jdk-8.0.402.6\bin\java.exe';
-$jasperJar = __DIR__ . '/jasperstarter/bin/jasperstarter.jar';
-$mysqlConnector = __DIR__ . '/mysql-connector-java.jar';
-
-// Configuración BD
-$configDB = [
-    'host' => 'localhost',
-    'port' => '3306',
-    'database' => 'osticket_db',
-    'username' => 'osticket_user',
-    'password' => '123456'
-];
-
-// Crear carpeta storage si no existe
-$storage = __DIR__ . '/storage';
-if (!is_dir($storage)) {
-    mkdir($storage, 0777, true);
-}
-
-// ========== FUNCIONES ==========
-function buscarReportes($directorio = __DIR__) {
-    $reportes = [];
-    $archivos = glob($directorio . '/*.jrxml');
-    
-    foreach ($archivos as $archivo) {
-        $nombre = basename($archivo, '.jrxml');
-        $tamano = round(filesize($archivo) / 1024, 2);
-        $fecha = date('Y-m-d H:i', filemtime($archivo));
-        
-        // Extraer nombre amigable (remover guiones y capitalizar)
-        $nombreAmigable = ucwords(str_replace(['_', '-'], ' ', $nombre));
-        
-        $reportes[] = [
-            'archivo' => $archivo,
-            'nombre' => $nombre,
-            'nombre_amigable' => $nombreAmigable,
-            'tamano_kb' => $tamano,
-            'fecha_mod' => $fecha,
-            'ruta_relativa' => basename($archivo)
-        ];
-    }
-    
-    // Buscar también en subdirectorios comunes
-    $subdirs = ['reports', 'reportes', 'jasper', 'jrxml', 'templates'];
-    foreach ($subdirs as $subdir) {
-        $path = $directorio . '/' . $subdir;
-        if (is_dir($path)) {
-            $subReportes = buscarReportes($path);
-            $reportes = array_merge($reportes, $subReportes);
-        }
-    }
-    
-    return $reportes;
-}
-
-function verificarRequisitos() {
-    global $java8Path, $jasperJar, $mysqlConnector;
-    
-    $requisitos = [
-        'Java 8' => ['archivo' => $java8Path, 'desc' => 'JDK 8 para ejecutar Jasper'],
-        'JasperStarter' => ['archivo' => $jasperJar, 'desc' => 'Motor de generación de reportes'],
-        'MySQL Connector' => ['archivo' => $mysqlConnector, 'desc' => 'Driver JDBC para MySQL'],
-    ];
-    
-    $resultados = [];
-    foreach ($requisitos as $nombre => $info) {
-        $existe = file_exists($info['archivo']);
-        $resultados[$nombre] = [
-            'existe' => $existe,
-            'desc' => $info['desc'],
-            'ruta' => $info['archivo']
-        ];
-    }
-    
-    return $resultados;
-}
-
-function generarReporte($jrxml, $formato = 'pdf', $parametros = []) {
-    global $java8Path, $jasperJar, $mysqlConnector, $configDB, $storage;
-    
-    // Generar nombre único para el archivo
-    $nombreBase = basename($jrxml, '.jrxml');
-    $timestamp = date('Ymd_His');
-    $outputBase = $storage . '/' . $nombreBase . '_' . $timestamp;
-    
-    // Construir comando
-    $cmd = "\"$java8Path\" -jar \"$jasperJar\"";
-    $cmd .= " --locale es_ES";
-    $cmd .= " pr \"$jrxml\"";
-    $cmd .= " -o \"$outputBase\"";
-    $cmd .= " -f $formato";
-    $cmd .= " -t mysql";
-    $cmd .= " -u " . $configDB['username'];
-    $cmd .= " -p " . $configDB['password'];
-    $cmd .= " -H " . $configDB['host'];
-    $cmd .= " -n " . $configDB['database'];
-    $cmd .= " --db-port " . $configDB['port'];
-    $cmd .= " --jdbc-dir \"" . dirname($mysqlConnector) . "\"";
-    
-    // Agregar parámetros si existen
-    if (!empty($parametros)) {
-        foreach ($parametros as $key => $value) {
-            $cmd .= " -P $key=\"$value\"";
-        }
-    }
-    
-    $cmd .= " 2>&1";
-    
-    // Ejecutar comando
-    exec($cmd, $output, $code);
-    
-    // Buscar archivo generado
-    $archivoGenerado = null;
-    $formatoExt = strtolower($formato);
-    
-    // Primero buscar con la extensión esperada
-    $candidatos = [
-        $outputBase . '.' . $formatoExt,
-        $outputBase . '.' . strtoupper($formatoExt),
-        $outputBase // Sin extensión
-    ];
-    
-    foreach ($candidatos as $candidato) {
-        if (file_exists($candidato)) {
-            $archivoGenerado = $candidato;
-            break;
-        }
-    }
-    
-    // Si no se encuentra, buscar cualquier archivo que comience con el nombre base
-    if (!$archivoGenerado) {
-        $patron = $outputBase . '.*';
-        $archivos = glob($patron);
-        if (!empty($archivos)) {
-            $archivoGenerado = $archivos[0];
-        }
-    }
-    
-    return [
-        'exitoso' => ($code === 0),
-        'codigo' => $code,
-        'salida' => $output,
-        'archivo' => $archivoGenerado,
-        'comando' => $cmd,
-        'nombre_base' => $nombreBase
-    ];
-}
+// Incluir funciones compartidas
+require_once __DIR__ . '/jasper_functions.php';
 
 // ========== LÓGICA PRINCIPAL ==========
 $accion = $_GET['accion'] ?? 'listar';
 $reporte = $_GET['reporte'] ?? '';
 $formato = strtolower($_GET['formato'] ?? 'pdf');
+$skin   = $_GET['skin'] ?? '';
+$isOst  = ($skin === 'ost');
 
-// Buscar todos los reportes
-$reportes = buscarReportes();
+// Buscar todos los reportes desde carpeta actual
+$reportes = buscarReportes(__DIR__);
 
 // Verificar requisitos
 $requisitos = verificarRequisitos();
@@ -169,6 +25,7 @@ foreach ($requisitos as $req) {
     }
 }
 
+if (!$isOst) {
 echo "<!DOCTYPE html>
 <html lang='es'>
 <head>
@@ -178,44 +35,15 @@ echo "<!DOCTYPE html>
     <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css' rel='stylesheet'>
     <link href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css' rel='stylesheet'>
     <style>
-        .card-reporte {
-            transition: transform 0.3s, box-shadow 0.3s;
-            cursor: pointer;
-        }
-        .card-reporte:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        .requisito-ok { color: #198754; }
-        .requisito-error { color: #dc3545; }
-        .format-badge { font-size: 0.7em; margin-right: 3px; }
-        .log-output {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 12px;
-            padding: 15px;
-            border-radius: 5px;
-            max-height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-        }
-        .report-icon {
-            font-size: 2em;
-            opacity: 0.8;
-        }
-        .status-badge {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-        }
+        .card-reporte { transition: transform 0.3s, box-shadow 0.3s; cursor: pointer; }
+        .card-reporte:hover { transform: translateY(-5px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .log-output { background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas','Monaco', monospace; font-size: 12px; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
     </style>
 </head>
 <body class='bg-light'>
 <div class='container-fluid py-4'>
     <div class='row'>
         <div class='col-12'>
-            <!-- HEADER -->
             <div class='card mb-4 shadow'>
                 <div class='card-header bg-primary text-white d-flex justify-content-between align-items-center'>
                     <div>
@@ -223,39 +51,49 @@ echo "<!DOCTYPE html>
                         <p class='mb-0 opacity-75'>Sistema automático de generación de reportes Jasper</p>
                     </div>
                     <div>
-                        <span class='badge bg-light text-dark'>
-                            <i class='fas fa-database me-1'></i>
-                            {$configDB['database']}
-                        </span>
+                        <span class='badge bg-light text-dark'><i class='fas fa-database me-1'></i>{$configDB['database']}</span>
                     </div>
                 </div>
                 <div class='card-body'>
-                    <!-- PANEL DE REQUISITOS -->
                     <div class='row mb-4'>
                         <div class='col-md-12'>
                             <h5><i class='fas fa-clipboard-check me-2'></i>Requisitos del Sistema</h5>
                             <div class='row'>";
+} else {
+    echo "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'><title>Generador de Reportes</title>
+    <link rel='stylesheet' href='../css/osticket.css'>
+    <link rel='stylesheet' href='../css/font-awesome.min.css'>
+    <style>.well{border:1px solid #ddd;padding:10px;border-radius:3px;margin-bottom:10px}.muted{color:#777}.btn{cursor:pointer}</style>
+    </head><body>
+    <div class='container-fluid'>
+    <h3><i class='icon-file'></i> Generador de Reportes</h3>
+    <div class='well'>
+        <h5><i class='icon-clipboard'></i> Requisitos del Sistema</h5>
+        <ul class='unstyled'>";
+    foreach ($requisitos as $nombre => $info) {
+        $estado = $info['existe'] ? 'OK' : 'FALTANTE';
+        $class = $info['existe'] ? 'label-success' : 'label-important';
+        echo "<li><span class='label {$class}' style='display:inline-block;min-width:70px;'>{$estado}</span> ";
+        echo htmlspecialchars($nombre) . ": <code>" . htmlspecialchars($info['ruta']) . "</code></li>";
+    }
+    echo "</ul></div>";
+    if (!$todosOk) {
+        echo "<div class='well' style='background:#fff3cd;border-color:#ffeeba;color:#856404;'>".
+             "<strong>Requisitos incompletos:</strong> No se pueden generar reportes hasta que estén instalados.</div>";
+    }
+}
                             
-foreach ($requisitos as $nombre => $info) {
-    $icono = $info['existe'] ? 'check-circle' : 'times-circle';
-    $color = $info['existe'] ? 'success' : 'danger';
-    $texto = $info['existe'] ? 'OK' : 'FALTANTE';
-    
-    echo "<div class='col-md-4 mb-2'>
-            <div class='card border-$color'>
-                <div class='card-body py-2'>
-                    <div class='d-flex align-items-center'>
-                        <i class='fas fa-$icono text-$color me-3 fs-4'></i>
-                        <div>
-                            <h6 class='mb-0'>$nombre</h6>
-                            <small class='text-muted'>{$info['desc']}</small><br>
-                            <small><code class='text-truncate d-block' style='max-width: 250px;'>{$info['ruta']}</code></small>
-                        </div>
-                        <span class='badge bg-$color ms-auto'>$texto</span>
-                    </div>
-                </div>
-            </div>
-          </div>";
+if (!$isOst) {
+    foreach ($requisitos as $nombre => $info) {
+        $icono = $info['existe'] ? 'check-circle' : 'times-circle';
+        $color = $info['existe'] ? 'success' : 'danger';
+        $texto = $info['existe'] ? 'OK' : 'FALTANTE';
+        echo "<div class='col-md-4 mb-2'><div class='card border-$color'><div class='card-body py-2'><div class='d-flex align-items-center'>
+        <i class='fas fa-$icono text-$color me-3 fs-4'></i>
+        <div><h6 class='mb-0'>$nombre</h6><small class='text-muted'>{$info['desc']}</small><br>
+        <small><code class='text-truncate d-block' style='max-width: 250px;'>{$info['ruta']}</code></small></div>
+        <span class='badge bg-$color ms-auto'>$texto</span></div></div></div></div>";
+    }
 }
 
 echo "                  </div>
@@ -264,121 +102,61 @@ echo "                  </div>
                     
                     <!-- MENSAJE DE ADVERTENCIA SI FALTAN REQUISITOS -->
                     ";
-if (!$todosOk) {
-    echo "<div class='alert alert-danger'>
-            <h5><i class='fas fa-exclamation-triangle me-2'></i>Requisitos incompletos</h5>
-            <p>No se pueden generar reportes hasta que todos los requisitos estén instalados.</p>
-            <a href='download_missing.php' class='btn btn-warning'>
-                <i class='fas fa-download me-1'></i>Descargar componentes faltantes
-            </a>
-          </div>";
+if (!$isOst) {
+    if (!$todosOk) {
+        echo "<div class='alert alert-danger'><h5><i class='fas fa-exclamation-triangle me-2'></i>Requisitos incompletos</h5>
+        <p>No se pueden generar reportes hasta que todos los requisitos estén instalados.</p>
+        <a href='download_missing.php' class='btn btn-warning'><i class='fas fa-download me-1'></i>Descargar componentes faltantes</a></div>";
+    }
 }
 
 // ========== PANTALLA DE LISTADO DE REPORTES ==========
 if ($accion == 'listar' || !$todosOk) {
-    echo "<div class='row'>
-            <div class='col-12'>
-                <div class='d-flex justify-content-between align-items-center mb-4'>
-                    <h4><i class='fas fa-copy me-2'></i>Reportes Disponibles</h4>
-                    <div>
-                        <span class='badge bg-info'>" . count($reportes) . " encontrados</span>
-                        <button class='btn btn-sm btn-outline-primary' onclick='location.reload()'>
-                            <i class='fas fa-sync-alt'></i> Actualizar
-                        </button>
-                    </div>
-                </div>";
-    
-    if (empty($reportes)) {
-        echo "<div class='alert alert-warning'>
-                <h5><i class='fas fa-search me-2'></i>No se encontraron reportes</h5>
-                <p>Coloca archivos .jrxml en la carpeta del proyecto o en subcarpetas como:</p>
-                <ul>
-                    <li><code>/reports/</code></li>
-                    <li><code>/reportes/</code></li>
-                    <li><code>/jasper/</code></li>
-                    <li><code>/templates/</code></li>
-                </ul>
-              </div>";
-    } else {
-        echo "<div class='row'>";
-        
-        foreach ($reportes as $rep) {
-            $iconos = [
-                'pdf' => 'file-pdf',
-                'excel' => 'file-excel',
-                'word' => 'file-word',
-                'html' => 'file-code'
-            ];
-            
-            $iconoAleatorio = $iconos[array_rand($iconos)];
-            
-            echo "<div class='col-xl-3 col-lg-4 col-md-6 mb-4'>
-                    <div class='card card-reporte h-100 border-primary'>
-                        <div class='card-header bg-primary bg-opacity-10'>
-                            <div class='d-flex justify-content-between align-items-center'>
-                                <h6 class='mb-0'>
-                                    <i class='fas fa-$iconoAleatorio text-primary me-2'></i>
-                                    {$rep['nombre_amigable']}
-                                </h6>
-                                <span class='badge bg-secondary'>{$rep['tamano_kb']} KB</span>
-                            </div>
-                        </div>
-                        <div class='card-body'>
-                            <p class='small text-muted mb-2'>
-                                <i class='far fa-file me-1'></i>
-                                <code>{$rep['ruta_relativa']}</code>
-                            </p>
-                            <p class='small text-muted mb-3'>
-                                <i class='far fa-clock me-1'></i>
-                                Modificado: {$rep['fecha_mod']}
-                            </p>
-                            
-                            <!-- BOTONES DE FORMATO -->
-                            <div class='mb-3'>
-                                <small class='text-muted d-block mb-1'>Exportar como:</small>
-                                <div class='btn-group btn-group-sm d-flex' role='group'>";
-            
-            $formatos = [
-                'pdf' => ['color' => 'danger', 'icon' => 'file-pdf', 'text' => 'PDF'],
-                'xlsx' => ['color' => 'success', 'icon' => 'file-excel', 'text' => 'Excel'],
-                'docx' => ['color' => 'primary', 'icon' => 'file-word', 'text' => 'Word'],
-                'html' => ['color' => 'info', 'icon' => 'code', 'text' => 'HTML'],
-                'csv' => ['color' => 'secondary', 'icon' => 'file-csv', 'text' => 'CSV']
-            ];
-            
-            foreach ($formatos as $fmt => $info) {
-                $disabled = !$todosOk ? 'disabled' : '';
-                echo "<a href='?accion=generar&reporte=" . urlencode($rep['archivo']) . "&formato=$fmt' 
-                      class='btn btn-outline-{$info['color']} flex-fill $disabled'>
-                        <i class='fas fa-{$info['icon']} me-1'></i>
-                        {$info['text']}
-                    </a>";
+    if (!$isOst) {
+        echo "<div class='row'><div class='col-12'><div class='d-flex justify-content-between align-items-center mb-4'>
+        <h4><i class='fas fa-copy me-2'></i>Reportes Disponibles</h4><div>
+        <span class='badge bg-info'>" . count($reportes) . " encontrados</span>
+        <button class='btn btn-sm btn-outline-primary' onclick='location.reload()'><i class='fas fa-sync-alt'></i> Actualizar</button>
+        </div></div>";
+        if (empty($reportes)) {
+            echo "<div class='alert alert-warning'><h5><i class='fas fa-search me-2'></i>No se encontraron reportes</h5>
+            <p>Coloca archivos .jrxml en subcarpetas como <code>/reports/</code>, <code>/jasper/</code>, <code>/templates/</code>.</p></div>";
+        } else {
+            echo "<div class='row'>";
+            foreach ($reportes as $rep) {
+                $iconos = ['pdf'=>'file-pdf','xlsx'=>'file-excel','docx'=>'file-word','html'=>'file-code','csv'=>'file-csv'];
+                echo "<div class='col-xl-3 col-lg-4 col-md-6 mb-4'><div class='card card-reporte h-100 border-primary'>";
+                echo "<div class='card-header bg-primary bg-opacity-10'><div class='d-flex justify-content-between align-items-center'><h6 class='mb-0'>".
+                     htmlspecialchars($rep['nombre_amigable'])."</h6><span class='badge bg-secondary'>{$rep['tamano_kb']} KB</span></div></div>";
+                echo "<div class='card-body'><p class='small text-muted mb-2'><code>".htmlspecialchars($rep['ruta_relativa'])."</code></p>";
+                echo "<div class='btn-group btn-group-sm d-flex' role='group'>";
+                foreach (['pdf','xlsx','docx','html','csv'] as $fmt) {
+                    $disabled = !$todosOk ? 'disabled' : '';
+                    echo "<a href='?accion=generar&reporte=".urlencode($rep['archivo'])."&formato=$fmt&skin=' class='btn btn-outline-primary flex-fill $disabled'>".strtoupper($fmt)."</a>";
+                }
+                echo "</div></div><div class='card-footer bg-transparent'><a href='?accion=generar&reporte=".urlencode($rep['archivo'])."&formato=pdf' class='btn btn-primary w-100'>Generar Ahora</a></div></div></div>";
             }
-            
-            echo "          </div>
-                            </div>
-                            
-                            <!-- BOTÓN PARA VER PARÁMETROS -->
-                            <button class='btn btn-sm btn-outline-warning w-100' 
-                                    onclick=\"mostrarParametros('{$rep['nombre']}')\"
-                                    $disabled>
-                                <i class='fas fa-sliders-h me-1'></i> Parámetros
-                            </button>
-                        </div>
-                        <div class='card-footer bg-transparent'>
-                            <a href='?accion=generar&reporte=" . urlencode($rep['archivo']) . "&formato=pdf' 
-                               class='btn btn-primary w-100 $disabled'>
-                                <i class='fas fa-play me-1'></i> Generar Ahora
-                            </a>
-                        </div>
-                    </div>
-                  </div>";
+            echo "</div>";
         }
-        
-        echo "</div>"; // Cierra row
+        echo "</div></div>";
+    } else {
+        echo "<div class='well'><h5><i class='icon-copy'></i> Reportes Disponibles <span class='label'>".count($reportes)."</span></h5>";
+        if (empty($reportes)) {
+            echo "<div class='muted'>No se encontraron archivos .jrxml</div>";
+        } else {
+            foreach ($reportes as $rep) {
+                echo "<div class='well' style='padding:8px;margin-bottom:8px;'>".
+                     "<strong><i class='icon-file'></i> ".htmlspecialchars($rep['nombre_amigable'])."</strong> ".
+                     "<span class='muted'>(".$rep['tamano_kb']." KB, ".htmlspecialchars($rep['fecha_mod']).")</span><br>";
+                foreach (['pdf','xlsx','docx','html','csv'] as $fmt) {
+                    $url = "?accion=generar&reporte=".urlencode($rep['archivo'])."&formato=$fmt&skin=ost";
+                    echo "<a class='btn btn-mini' href='".$url."' style='margin-right:6px;'>".strtoupper($fmt)."</a>";
+                }
+                echo "</div>";
+            }
+        }
+        echo "</div>";
     }
-    
-    echo "</div></div>";
 }
 
 // ========== PANTALLA DE GENERACIÓN ==========
@@ -400,12 +178,12 @@ elseif ($accion == 'generar' && $todosOk && $reporte) {
                             <p><strong>Base de datos:</strong> {$configDB['database']}@{$configDB['host']}</p>
                         </div>";
     
-    echo "<div class='text-center my-4'>
-            <div class='spinner-border text-primary' role='status' style='width: 3rem; height: 3rem;'>
-                <span class='visually-hidden'>Generando...</span>
-            </div>
-            <p class='mt-3'>Generando reporte, por favor espera...</p>
-          </div>";
+    if (!$isOst) {
+        echo "<div class='text-center my-4'><div class='spinner-border text-primary' role='status' style='width:3rem;height:3rem;'>
+        <span class='visually-hidden'>Generando...</span></div><p class='mt-3'>Generando reporte, por favor espera...</p></div>";
+    } else {
+        echo "<div class='well'><strong>Generando...</strong> Por favor espera...</div>";
+    }
     
     ob_flush();
     flush();
@@ -431,58 +209,59 @@ elseif ($accion == 'generar' && $todosOk && $reporte) {
             $archivoNombre = basename($resultado['archivo']);
             $archivoTamanio = round(filesize($resultado['archivo']) / 1024, 2);
             $archivoUrl = 'storage/' . $archivoNombre;
-            
-            echo "<div class='alert alert-success'>
-                    <h5><i class='fas fa-check-circle me-2'></i>¡Reporte Generado Exitosamente!</h5>
-                    <p><strong>Archivo:</strong> $archivoNombre ($archivoTamanio KB)</p>
-                    
-                    <div class='d-flex gap-2 mt-3'>
-                        <a href='$archivoUrl' class='btn btn-primary' download>
-                            <i class='fas fa-download me-1'></i> Descargar
-                        </a>
-                        <a href='$archivoUrl' class='btn btn-success' target='_blank'>
-                            <i class='fas fa-eye me-1'></i> Ver
-                        </a>
-                        <a href='?' class='btn btn-secondary'>
-                            <i class='fas fa-list me-1'></i> Ver Todos
-                        </a>
-                    </div>
-                  </div>";
+            if (!$isOst) {
+                echo "<div class='alert alert-success'><h5><i class='fas fa-check-circle me-2'></i>¡Reporte Generado Exitosamente!</h5>
+                <p><strong>Archivo:</strong> $archivoNombre ($archivoTamanio KB)</p>
+                <div class='d-flex gap-2 mt-3'>
+                <a href='$archivoUrl' class='btn btn-primary' download><i class='fas fa-download me-1'></i> Descargar</a>
+                <a href='$archivoUrl' class='btn btn-success' target='_blank'><i class='fas fa-eye me-1'></i> Ver</a>
+                <a href='?skin=' class='btn btn-secondary'><i class='fas fa-list me-1'></i> Ver Todos</a></div></div>";
+            } else {
+                echo "<div class='well' style='background:#e8f5e9;border-color:#c8e6c9;'>
+                <strong>Reporte generado:</strong> ".htmlspecialchars($archivoNombre)." (".$archivoTamanio." KB) 
+                <div style='margin-top:6px;'>
+                <a class='btn btn-mini btn-primary' href='".$archivoUrl."' download>Descargar</a>
+                <a class='btn btn-mini btn-success' href='".$archivoUrl."' target='_blank'>Ver</a>
+                <a class='btn btn-mini' href='?skin=ost'>Ver Todos</a>
+                </div></div>";
+            }
             
             // Vista previa para PDF
             if ($formato == 'pdf') {
-                echo "<div class='mt-4'>
-                        <h6><i class='fas fa-file-pdf me-2'></i>Vista Previa</h6>
-                        <iframe src='$archivoUrl' width='100%' height='500' style='border: 1px solid #ddd; border-radius: 5px;'></iframe>
-                      </div>";
+                if (!$isOst) {
+                    echo "<div class='mt-4'><h6><i class='fas fa-file-pdf me-2'></i>Vista Previa</h6>
+                    <iframe src='$archivoUrl' width='100%' height='500' style='border:1px solid #ddd;border-radius:5px;'></iframe></div>";
+                } else {
+                    echo "<div class='well'><strong>Vista previa (PDF)</strong><br>
+                    <iframe src='$archivoUrl' width='100%' height='500' style='border:1px solid #ddd;'></iframe></div>";
+                }
             }
         } else {
-            echo "<div class='alert alert-warning'>
-                    <h5><i class='fas fa-exclamation-triangle me-2'></i>Comando exitoso pero archivo no encontrado</h5>
-                    <p>Salida del comando:</p>
-                    <div class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</div>
-                  </div>";
+            if (!$isOst) {
+                echo "<div class='alert alert-warning'><h5><i class='fas fa-exclamation-triangle me-2'></i>Comando exitoso pero archivo no encontrado</h5>
+                <p>Salida del comando:</p><div class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</div></div>";
+            } else {
+                echo "<div class='well' style='background:#fff3cd;border-color:#ffeeba;color:#856404;'>
+                <strong>Comando exitoso pero archivo no encontrado</strong>
+                <pre class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</pre></div>";
+            }
         }
     } else {
-        echo "<div class='alert alert-danger'>
-                <h5><i class='fas fa-times-circle me-2'></i>Error al generar reporte</h5>
-                <p>Código de error: {$resultado['codigo']}</p>
-                
-                <h6 class='mt-3'>Detalles del error:</h6>
-                <div class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</div>
-                
-                <h6 class='mt-3'>Comando ejecutado:</h6>
-                <div class='log-output'>" . htmlspecialchars($resultado['comando']) . "</div>
-                
-                <div class='mt-3'>
-                    <a href='?' class='btn btn-secondary'>
-                        <i class='fas fa-arrow-left me-1'></i> Volver
-                    </a>
-                    <a href='test_manual_cmd.php' class='btn btn-warning'>
-                        <i class='fas fa-tools me-1'></i> Probar Manualmente
-                    </a>
-                </div>
-              </div>";
+        if (!$isOst) {
+            echo "<div class='alert alert-danger'><h5><i class='fas fa-times-circle me-2'></i>Error al generar reporte</h5>
+            <p>Código de error: {$resultado['codigo']}</p>
+            <h6 class='mt-3'>Detalles del error:</h6><div class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</div>
+            <h6 class='mt-3'>Comando ejecutado:</h6><div class='log-output'>" . htmlspecialchars($resultado['comando']) . "</div>
+            <div class='mt-3'><a href='?' class='btn btn-secondary'>Volver</a>
+            <a href='test_manual_cmd.php' class='btn btn-warning'>Probar Manualmente</a></div></div>";
+        } else {
+            echo "<div class='well' style='background:#f8d7da;border-color:#f5c2c7;color:#842029;'>
+            <strong>Error al generar reporte</strong> (código: {$resultado['codigo']})
+            <h6>Salida:</h6><pre class='log-output'>" . htmlspecialchars(implode("\n", $resultado['salida'])) . "</pre>
+            <h6>Comando:</h6><pre class='log-output'>" . htmlspecialchars($resultado['comando']) . "</pre>
+            <a class='btn btn-mini' href='?skin=ost'>Volver</a>
+            <a class='btn btn-mini btn-warning' href='test_manual_cmd.php'>Probar Manualmente</a></div>";
+        }
     }
     
     echo "      </div>
@@ -547,57 +326,8 @@ elseif ($accion == 'generar' && $todosOk && $reporte) {
           </div>";
 }
 
-echo "      </div>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL PARA PARÁMETROS -->
-<div class='modal fade' id='modalParametros' tabindex='-1'>
-    <div class='modal-dialog'>
-        <div class='modal-content'>
-            <div class='modal-header'>
-                <h5 class='modal-title'><i class='fas fa-sliders-h me-2'></i>Parámetros del Reporte</h5>
-                <button type='button' class='btn-close' data-bs-dismiss='modal'></button>
-            </div>
-            <div class='modal-body'>
-                <form id='formParametros'>
-                    <div class='mb-3'>
-                        <label class='form-label'>Fecha Desde</label>
-                        <input type='date' name='fecha_desde' class='form-control' value='" . date('Y-m-01') . "'>
-                    </div>
-                    <div class='mb-3'>
-                        <label class='form-label'>Fecha Hasta</label>
-                        <input type='date' name='fecha_hasta' class='form-control' value='" . date('Y-m-d') . "'>
-                    </div>
-                    <div class='mb-3'>
-                        <label class='form-label'>Usuario</label>
-                        <input type='text' name='usuario' class='form-control' placeholder='Opcional'>
-                    </div>
-                    <div class='mb-3'>
-                        <label class='form-label'>Departamento</label>
-                        <select name='departamento' class='form-select'>
-                            <option value=''>Todos</option>
-                            <option value='1'>Soporte Técnico</option>
-                            <option value='2'>Ventas</option>
-                            <option value='3'>Facturación</option>
-                        </select>
-                    </div>
-                    <input type='hidden' id='reporteActual' name='reporte'>
-                    <input type='hidden' id='formatoActual' name='formato'>
-                </form>
-            </div>
-            <div class='modal-footer'>
-                <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Cancelar</button>
-                <button type='button' class='btn btn-primary' onclick='enviarConParametros()'>
-                    <i class='fas fa-play me-1'></i> Generar con Parámetros
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- SCRIPTS -->
+if (!$isOst) {
+echo "      </div></div></div></div>
 <script src='https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js'></script>
 <script>
 function mostrarParametros(reporteNombre) {
@@ -666,3 +396,6 @@ if ($accion == 'generar' && $todosOk && $reporte) {
 echo "</script>
 </body>
 </html>";
+} else {
+    echo "</div></body></html>";
+}

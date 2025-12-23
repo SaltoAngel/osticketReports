@@ -3,6 +3,7 @@
 // =================================================================
 
 require('staff.inc.php');
+require_once(dirname(__FILE__) . '/../jasper-test/jasper_functions.php');
 
 // Solo verificación de permisos
 if(!$thisstaff || !$thisstaff->isAdmin()) {
@@ -14,126 +15,150 @@ $nav->setActiveTab('reportes');
 include(STAFFINC_DIR.'header.inc.php');
 
 ?>
+<?php
+// Parámetros y flujo tipo generate.php
+$accion = $_GET['accion'] ?? 'listar';
+$reporte = $_GET['reporte'] ?? '';
+$formato = strtolower($_GET['formato'] ?? 'pdf');
+
+// Verificar requisitos (igual que generate.php)
+$requisitos = verificarRequisitos();
+$todosOk = true; foreach ($requisitos as $r) { if (!$r['existe']) { $todosOk = false; break; } }
+
+// Descubrir plantillas JRXML (rutas estándar de osTicket)
+$tplDirs = array(
+    realpath(dirname(__FILE__) . '/../reports/java/templates'),
+    realpath(dirname(__FILE__) . '/../reports/templates')
+);
+$templates = array();
+foreach ($tplDirs as $d) { if ($d && is_dir($d)) { foreach (glob($d.'/*.jrxml') as $jr) {
+    $base = pathinfo($jr, PATHINFO_FILENAME);
+    $tam = @round(filesize($jr)/1024,2); $fec = @date('Y-m-d H:i', filemtime($jr));
+    $templates[] = array('archivo'=>$jr,'nombre'=>$base,'tamano_kb'=>$tam,'fecha_mod'=>$fec);
+}}}
+
+?>
 <div class="container-fluid">
-    <h2><i class="icon-bar-chart"></i> <?php echo __('Generador de Reportes Jasper'); ?></h2>
+    <h2><i class="icon-file"></i> <?php echo __('Generador de Reportes'); ?></h2>
 
     <div class="well well-small">
         <h5><i class="icon-clipboard"></i> <?php echo __('Requisitos del Sistema'); ?></h5>
-        <?php
-        $jsJar = realpath(dirname(__FILE__) . '/../jasper-test/jasperstarter/bin/jasperstarter.jar');
-        $jdbcFile = realpath(dirname(__FILE__) . '/../jasper-test/mysql-connector-java.jar');
-        $ok = function($p){ return ($p && file_exists($p)); };
-        ?>
         <ul class="unstyled" style="margin:0;">
+        <?php foreach ($requisitos as $nombre=>$info): $ok = $info['existe']; ?>
             <li>
-                <span class="label <?php echo $ok($jsJar)?'label-success':'label-important'; ?>" style="display:inline-block;min-width:70px;"><?php echo $ok($jsJar)?'OK':'FALTANTE'; ?></span>
-                JasperStarter: <code><?php echo $jsJar ? str_replace(dirname(__FILE__).'/..','',$jsJar) : 'upload/jasper-test/jasperstarter/bin/jasperstarter.jar'; ?></code>
+                <span class="label <?php echo $ok?'label-success':'label-important'; ?>" style="display:inline-block;min-width:70px;"><?php echo $ok?'OK':'FALTANTE'; ?></span>
+                <?php echo htmlspecialchars($nombre); ?>: <code><?php echo htmlspecialchars($info['ruta']); ?></code>
             </li>
-            <li>
-                <span class="label <?php echo $ok($jdbcFile)?'label-success':'label-important'; ?>" style="display:inline-block;min-width:70px;"><?php echo $ok($jdbcFile)?'OK':'FALTANTE'; ?></span>
-                MySQL Connector: <code><?php echo $jdbcFile ? str_replace(dirname(__FILE__).'/..','',$jdbcFile) : 'upload/jasper-test/mysql-connector-java.jar'; ?></code>
-            </li>
+        <?php endforeach; ?>
         </ul>
+        <?php if (!$todosOk): ?>
+        <div class="well" style="background:#fff3cd;border-color:#ffeeba;color:#856404;margin-top:8px;">
+            <strong><?php echo __('Requisitos incompletos'); ?>:</strong> <?php echo __('No se pueden generar reportes hasta instalar componentes.'); ?>
+        </div>
+        <?php endif; ?>
     </div>
 
-        <div class="well">
-                <form id="simpleReportForm" class="form-horizontal" onsubmit="return false;">
-                        <div class="row">
-                                <div class="col-md-4">
-                                        <label><?php echo __('Fecha Desde'); ?></label>
-                                        <input type="date" id="srFechaDesde" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
-                                </div>
-                                <div class="col-md-4">
-                                        <label><?php echo __('Fecha Hasta'); ?></label>
-                                        <input type="date" id="srFechaHasta" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
-                                </div>
-                                <div class="col-md-4">
-                                        <label><?php echo __('Formato'); ?></label>
-                                        <select id="srFormato" class="form-control">
-                                                <option value="pdf">PDF</option>
-                                                <option value="xlsx">Excel (XLSX)</option>
-                                                <option value="html">HTML</option>
-                                                <option value="docx">Word (DOCX)</option>
-                                                <option value="csv">CSV</option>
-                                        </select>
-                                </div>
-                        </div>
-                </form>
-        </div>
-
-        <div class="well well-small">
-            <h5><i class="icon-eye-open"></i> <?php echo __('Vista previa'); ?></h5>
-            <iframe id="previewFrame" style="width:100%; height:600px; border:1px solid #ddd; background:#fff;" loading="lazy"></iframe>
-            <div style="margin-top:8px;">
-                <button class="btn btn-mini" onclick="openPreviewTab()"><i class="icon-external-link"></i> <?php echo __('Abrir en nueva pestaña'); ?></button>
-                <button class="btn btn-mini" onclick="showExplorer()"><i class="icon-list"></i> <?php echo __('Explorar / Parámetros (jasper-test)'); ?></button>
-            </div>
-        </div>
-
-        <div class="well well-small">
-                <h5><i class="icon-copy"></i> <?php echo __('Plantillas Jasper'); ?></h5>
-                <div id="templatesGrid" class="row">
-                    <?php
-                    $tplDirs = array(
-                        realpath(dirname(__FILE__) . '/../reports/java/templates'),
-                        realpath(dirname(__FILE__) . '/../reports/templates')
-                    );
-                    $templates = array(); // nombre => ruta
-                    foreach ($tplDirs as $d) {
-                        if ($d && is_dir($d)) {
-                            foreach (glob($d . DIRECTORY_SEPARATOR . '*.jrxml') as $jr) {
-                                $base = pathinfo($jr, PATHINFO_FILENAME);
-                                $templates[$base] = $jr; // guardar ruta completa
-                            }
-                        }
-                    }
-                    ksort($templates);
-                    if (!$templates) {
-                        echo '<div class="muted" style="font-size:12px;">' . __('No se encontraron plantillas JRXML') . '</div>';
-                    } else {
-                        foreach ($templates as $tpl => $path) {
-                            $safeTpl = htmlspecialchars($tpl);
-                            $safePath = htmlspecialchars($path);
-                            echo '<div class="col-md-4" style="margin-bottom:12px;">';
-                            echo '  <div class="well" style="padding:10px;">';
-                            echo '    <strong><i class="icon-file"></i> ' . $safeTpl . '</strong>';
-                            echo '    <div class="btn-group" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">';
-                            echo '      <button class="btn btn-mini btn-danger" onclick="generateReportPath(\'' . $safePath . '\', \"pdf\")"><i class="icon-file"></i> PDF</button>';
-                            echo '      <button class="btn btn-mini btn-success" onclick="generateReportPath(\'' . $safePath . '\', \"xlsx\")"><i class="icon-file"></i> XLSX</button>';
-                            echo '      <button class="btn btn-mini btn-primary" onclick="generateReportPath(\'' . $safePath . '\', \"docx\")"><i class="icon-file"></i> DOCX</button>';
-                            echo '      <button class="btn btn-mini btn-info" onclick="generateReportPath(\'' . $safePath . '\', \"html\")"><i class="icon-file"></i> HTML</button>';
-                            echo '      <button class="btn btn-mini" onclick="generateReportPath(\'' . $safePath . '\', \"csv\")"><i class="icon-file"></i> CSV</button>';
-                            echo '    </div>';
-                            echo '  </div>';
-                            echo '</div>';
-                        }
-                    }
-                    ?>
+    <div class="well">
+        <form class="form-horizontal" onsubmit="return false;">
+            <div class="row">
+                <div class="col-md-4">
+                    <label><?php echo __('Fecha Desde'); ?></label>
+                    <input type="date" id="srFechaDesde" class="form-control" value="<?php echo date('Y-m-01'); ?>" required>
                 </div>
+                <div class="col-md-4">
+                    <label><?php echo __('Fecha Hasta'); ?></label>
+                    <input type="date" id="srFechaHasta" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                </div>
+                <div class="col-md-4">
+                    <label><?php echo __('Formato'); ?></label>
+                    <select id="srFormato" class="form-control">
+                        <option value="pdf">PDF</option>
+                        <option value="xlsx">Excel (XLSX)</option>
+                        <option value="html">HTML</option>
+                        <option value="docx">Word (DOCX)</option>
+                        <option value="csv">CSV</option>
+                    </select>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <?php if ($accion == 'listar' || !$todosOk): ?>
+    <div class="well well-small">
+        <h5><i class="icon-copy"></i> <?php echo __('Reportes Disponibles'); ?> <span class="label"><?php echo count($templates); ?></span></h5>
+        <?php if (empty($templates)): ?>
+            <div class="muted"><?php echo __('No se encontraron archivos .jrxml'); ?></div>
+        <?php else: ?>
+            <div class="row">
+            <?php foreach ($templates as $rep): ?>
+                <div class="col-md-4" style="margin-bottom:12px;">
+                    <div class="well" style="padding:10px;">
+                        <strong><i class="icon-file"></i> <?php echo htmlspecialchars($rep['nombre']); ?></strong>
+                        <span class="muted">(<?php echo $rep['tamano_kb']; ?> KB, <?php echo htmlspecialchars($rep['fecha_mod']); ?>)</span><br>
+                        <div class="btn-group" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+                            <?php foreach (array('pdf','xlsx','docx','html','csv') as $fmt): ?>
+                                <button class="btn btn-mini" onclick="gotoGenerate('<?php echo htmlspecialchars($rep['archivo']); ?>','<?php echo $fmt; ?>')"><?php echo strtoupper($fmt); ?></button>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php elseif ($accion == 'generar' && $todosOk && $reporte): ?>
+    <div class="well">
+        <h5><i class="icon-cogs"></i> <?php echo __('Generando Reporte'); ?></h5>
+        <div class="muted" style="margin-bottom:8px;">
+            <strong><?php echo __('Archivo'); ?>:</strong> <code><?php echo htmlspecialchars(basename($reporte)); ?></code>
+            &nbsp;&nbsp;<strong><?php echo __('Formato'); ?>:</strong> <span class="label"><?php echo strtoupper($formato); ?></span>
         </div>
+        <?php
+        // Construir parámetros desde GET
+        $params = array(); foreach ($_GET as $k=>$v){ if (in_array($k,array('accion','reporte','formato'),true)) continue; if ($v!=='' && $v!==null) $params[$k]=(string)$v; }
+        if (isset($params['fecha_desde'])) $params['FECHA_DESDE']=$params['fecha_desde'];
+        if (isset($params['fecha_hasta'])) $params['FECHA_HASTA']=$params['fecha_hasta'];
+        $resultado = generarReporte($reporte, $formato, $params);
+        ?>
+        <?php if ($resultado['exitoso']): ?>
+            <?php if (!empty($resultado['archivo'])): $archivoNombre = basename($resultado['archivo']); $archivoTamanio = @round(filesize($resultado['archivo'])/1024,2); $archivoUrl = '../jasper-test/storage/' . $archivoNombre; ?>
+                <div class="well" style="background:#e8f5e9;border-color:#c8e6c9;">
+                    <strong><?php echo __('Reporte generado'); ?>:</strong> <?php echo htmlspecialchars($archivoNombre); ?> (<?php echo $archivoTamanio; ?> KB)
+                    <div style="margin-top:6px;">
+                        <a class="btn btn-mini btn-primary" href="<?php echo $archivoUrl; ?>" download><?php echo __('Descargar'); ?></a>
+                        <a class="btn btn-mini btn-success" href="<?php echo $archivoUrl; ?>" target="_blank"><?php echo __('Ver'); ?></a>
+                        <a class="btn btn-mini" href="reportes.php"><?php echo __('Ver Todos'); ?></a>
+                    </div>
+                </div>
+                <?php if ($formato === 'pdf'): ?>
+                <div class="well">
+                    <strong><?php echo __('Vista previa (PDF)'); ?></strong><br>
+                    <iframe src="<?php echo $archivoUrl; ?>" width="100%" height="500" style="border:1px solid #ddd;"></iframe>
+                </div>
+                <?php endif; ?>
+            <?php else: ?>
+                <div class="well" style="background:#fff3cd;border-color:#ffeeba;color:#856404;">
+                    <strong><?php echo __('Comando exitoso pero archivo no encontrado'); ?></strong>
+                    <pre style="background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;white-space:pre-wrap;"><?php echo htmlspecialchars(implode("\n", $resultado['salida'])); ?></pre>
+                </div>
+            <?php endif; ?>
+        <?php else: ?>
+            <div class="well" style="background:#f8d7da;border-color:#f5c2c7;color:#842029;">
+                <strong><?php echo __('Error al generar reporte'); ?></strong> (<?php echo __('código'); ?>: <?php echo $resultado['codigo']; ?>)
+                <h6><?php echo __('Salida'); ?>:</h6>
+                <pre style="background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;white-space:pre-wrap;"><?php echo htmlspecialchars(implode("\n", $resultado['salida'])); ?></pre>
+                <h6><?php echo __('Comando'); ?>:</h6>
+                <pre style="background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;white-space:pre-wrap;"><?php echo htmlspecialchars($resultado['comando']); ?></pre>
+                <a class="btn btn-mini" href="reportes.php"><?php echo __('Volver'); ?></a>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 </div>
 
 <script type="text/javascript">
-function getDates() {
-    return {
-        desde: document.getElementById('srFechaDesde').value,
-        hasta: document.getElementById('srFechaHasta').value
-    };
-}
-function generateReportPath(jrxmlPath, fmt) {
-    const dates = getDates();
-    const format = fmt || document.getElementById('srFormato').value;
-    const url = '../jasper-test/generate.php?accion=generar'
-        + '&reporte=' + encodeURIComponent(jrxmlPath)
-        + '&formato=' + encodeURIComponent(format)
-        + '&fecha_desde=' + encodeURIComponent(dates.desde + ' 00:00:00')
-        + '&fecha_hasta=' + encodeURIComponent(dates.hasta + ' 23:59:59');
-    const frame = document.getElementById('previewFrame');
-    frame.src = url;
-    window._lastPreviewUrl = url;
-}
-function openPreviewTab(){ if (window._lastPreviewUrl) { window.open(window._lastPreviewUrl, '_blank'); } }
-function showExplorer(){ const frame = document.getElementById('previewFrame'); frame.src = '../jasper-test/generate.php?accion=listar'; window._lastPreviewUrl = frame.src; }
+function getDates(){ return { desde: document.getElementById('srFechaDesde').value, hasta: document.getElementById('srFechaHasta').value }; }
+function gotoGenerate(jrxmlPath, fmt){ const d=getDates(); const format = fmt || document.getElementById('srFormato').value; const url = 'reportes.php?accion=generar' + '&reporte=' + encodeURIComponent(jrxmlPath) + '&formato=' + encodeURIComponent(format) + '&fecha_desde=' + encodeURIComponent(d.desde + ' 00:00:00') + '&fecha_hasta=' + encodeURIComponent(d.hasta + ' 23:59:59'); window.location.href = url; }
 </script>
 
 <?php
